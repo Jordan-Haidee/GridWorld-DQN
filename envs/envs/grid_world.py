@@ -1,78 +1,60 @@
 import functools
-from typing import Optional
+from pathlib import Path
+from typing import Literal, Optional
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 import numpy as np
 import gymnasium as gym
+import pytoml
 
 
 # 创建GridWorld环境
 class GridWorld(gym.Env):
-    map_reward = np.array(
-        [
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, -10, -10, -10, -10, 0, 0, 0, 0],
-            [0, 0, -10, -10, -10, -10, 0, 0, 0, 0],
-            [0, 0, 0, 0, -10, -10, 0, 0, 0, 0],
-            [0, 0, 0, 0, -10, -10, 0, 0, 0, 0],
-            [0, 0, -10, -10, 0, 0, -10, -10, 0, 0],
-            [0, 0, -10, -10, 0, 1, -10, -10, 0, 0],
-            [0, 0, -10, -10, 0, 0, 0, 0, 0, 0],
-            [0, 0, -10, -10, 0, 0, 0, 0, 0, 0],
-        ],
-        dtype=float,
-    )
-    goal = np.array([7, 5])  # 目标状态
-    size = map_reward.shape[0]
-
-    def __init__(self):
-        self.state = np.array([0, 0], dtype=int)  # 初始状态
-        self.action_space = gym.spaces.Discrete(1)
+    def __init__(self, size: Literal[5, 10] = 10, env_type: Literal["train", "test"] = "train"):
+        with open(Path(__file__).parent / "default.toml") as f:
+            config = pytoml.load(f)
+        self.env_type = env_type
+        self.size = size
+        self.map_reward = np.array(config.get(f"map_reward_x{self.size}"), dtype=float)
+        self.goal = config.get(f"goal_x{self.size}")
+        self.action_space = gym.spaces.Discrete(5)
         self.observation_space = gym.spaces.Box(
             low=np.array([0, 0]),
             high=np.array([self.size, self.size]),
             dtype=int,
         )
 
-    @classmethod
+    @property
     @functools.lru_cache
-    def _transitions(cls):
-        trans = np.zeros((cls.size, cls.size, 5, 2), dtype=int)
-        for i in range(cls.size):
-            for j in range(cls.size):
+    def transitions(self):
+        trans = np.zeros((self.size, self.size, 5, 2), dtype=int)
+        for i in range(self.size):
+            for j in range(self.size):
                 trans[i][j][0] = np.array([i, j]) if i == 0 else np.array([i - 1, j])
-                trans[i][j][1] = np.array([i, j]) if i == cls.size - 1 else np.array([i + 1, j])
+                trans[i][j][1] = np.array([i, j]) if i == self.size - 1 else np.array([i + 1, j])
                 trans[i][j][2] = np.array([i, j]) if j == 0 else np.array([i, j - 1])
-                trans[i][j][3] = np.array([i, j]) if j == cls.size - 1 else np.array([i, j + 1])
+                trans[i][j][3] = np.array([i, j]) if j == self.size - 1 else np.array([i, j + 1])
                 trans[i][j][4] = np.array([i, j])
         return trans
 
-    @classmethod
-    def _next_state(cls, state, action):
+    def _next_state(self, state, action):
         i, j = state
-        return cls._transitions()[i][j][action]
+        return self.transitions[i][j][action]
 
-    @classmethod
-    def _is_cross_border(cls, state, action):
+    def _is_cross_border(self, state, action):
         situations = [
             state[0] == 0 and action == 0,
-            state[0] == cls.size - 1 and action == 1,
+            state[0] == self.size - 1 and action == 1,
             state[1] == 0 and action == 2,
-            state[1] == cls.size - 1 and action == 3,
+            state[1] == self.size - 1 and action == 3,
         ]
         return True if any(situations) else False
 
-    @classmethod
-    def _reward(cls, state, action):
-        i, j = cls._next_state(state, action)
-        r1 = cls.map_reward[i][j]
-        r2 = -1 if cls._is_cross_border(state, action) else 0
+    def _reward(self, state, action):
+        i, j = self._next_state(state, action)
+        r1 = self.map_reward[i][j]
+        r2 = -1 if self._is_cross_border(state, action) else 0
         return r1 + r2
-
-    @property
-    def transitions(self):
-        return self._transitions()
 
     def next_state(self, action):
         i, j = self.state
@@ -84,32 +66,43 @@ class GridWorld(gym.Env):
 
     def reward(self, action):
         """求取奖励"""
-        return GridWorld._reward(self.state, action)
+        return self._reward(self.state, action)
 
     def step(self, action):
         """切换状态并求取奖励"""
         r = self.reward(action)
         self.state = self.next_state(action)
-        t1 = True if np.array_equal(self.state, self.goal) else False
+        if self.env_type == "test":
+            t1 = True if np.array_equal(self.state, self.goal) else False
+        else:
+            t1 = False
         info = {}
         return self.state, r, t1, False, info
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         """回到原点"""
-        self.state = np.array([0, 0])
+        if self.env_type == "test":
+            self.state = np.array([0, 0])
+        else:
+            self.state = np.random.randint(0, self.size, size=(2,))
         info = {}
         return self.state, info
 
-    @classmethod
-    def index2coordinate(cls, idx):
-        return np.array([idx // cls.size, idx % cls.size])
+    def index2coordinate(self, idx):
+        return np.array([idx // self.size, idx % self.size])
 
-    @classmethod
-    def coordinate2index(cls, coord):
+    def coordinate2index(self, coord):
         i, j = coord
-        return i * cls.size + j
+        return i * self.size + j
 
-    def display(self, policy: Optional[np.ndarray] = None):
+    def normalize_state(self, s: np.ndarray):
+        return s / 1.0
+        # return s / cls.size
+
+    def normalize_reward(self, r: float):
+        return r / 10.0
+
+    def display_optimal_policy(self, policy: Optional[np.ndarray] = None):
         # 设置颜色图
         _map = self.map_reward.copy()
         _map[_map == 0] = 10
@@ -127,9 +120,11 @@ class GridWorld(gym.Env):
                     if (a := policy[i][j]) < 4:
                         plt.arrow(j, i, *dxdy[a], width=0.01, length_includes_head=True, head_width=0.10, color="black")
                     else:
-                        plt.scatter(j, i, marker="o", color="black",s=100)
+                        plt.scatter(j, i, marker="o", color="black", s=100)
 
-        plt.xticks(np.arange(self.size) - 0.5)
-        plt.yticks(np.arange(self.size) - 0.5)
+        # plt.xticks(np.arange(self.size) - 0.5)
+        # plt.yticks(np.arange(self.size) - 0.5)
         plt.grid(color="black", linestyle="-", linewidth=1)
+        plt.xticks([])
+        plt.yticks([])
         plt.show()

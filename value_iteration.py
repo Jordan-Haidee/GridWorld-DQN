@@ -3,7 +3,7 @@ import gymnasium as gym
 
 
 # 环境/参数设置
-env = gym.make("envs:GridWorld")
+env = gym.make("envs:GridWorld", size=10)
 gamma = 0.90
 states = np.arange(env.unwrapped.size**2)
 value_table = np.zeros_like(states, dtype=float)
@@ -38,8 +38,8 @@ for s in states:
         q_s.append(env.unwrapped._reward(_s, a) + gamma * value_table[ns])
     q_table[s] = np.array(q_s)
 policy = q_table.argmax(axis=1).reshape(env.unwrapped.size, env.unwrapped.size)
-env.unwrapped.display(policy)
+env.unwrapped.display_optimal_policy(policy)
 
-np.save("optimal_sv.npy", value_table)
-np.save("optimal_qv.npy", q_table)
-np.save("policy_table.npy", policy)
+np.save(f"result/optimal_sv_x{env.unwrapped.size}.npy", value_table)
+np.save(f"result/optimal_qv_x{env.unwrapped.size}.npy", q_table)
+np.save(f"result/policy_table_x{env.unwrapped.size}.npy", policy)
