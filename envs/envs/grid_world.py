@@ -1,16 +1,22 @@
 import functools
 from pathlib import Path
 from typing import Literal, Optional
+
+import gymnasium as gym
+import numpy as np
+import pytoml
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
-import numpy as np
-import gymnasium as gym
-import pytoml
 
 
 # 创建GridWorld环境
 class GridWorld(gym.Env):
-    def __init__(self, size: Literal[5, 10] = 10, env_type: Literal["train", "test"] = "train"):
+    def __init__(
+        self,
+        size: Literal[5, 10] = 10,
+        env_type: Literal["train", "test"] = "train",
+        seed: Optional[int] = None,
+    ):
         with open(Path(__file__).parent / "default.toml") as f:
             config = pytoml.load(f)
         self.env_type = env_type
@@ -23,11 +29,13 @@ class GridWorld(gym.Env):
             high=np.array([self.size, self.size]),
             dtype=int,
         )
+        if seed is not None:
+            self.action_space.seed(seed)
 
     @property
     @functools.lru_cache
     def transitions(self):
-        trans = np.zeros((self.size, self.size, 5, 2), dtype=int)
+        trans = np.zeros((self.size, self.size, self.action_space.n, 2), dtype=int)
         for i in range(self.size):
             for j in range(self.size):
                 trans[i][j][0] = np.array([i, j]) if i == 0 else np.array([i - 1, j])
@@ -97,12 +105,12 @@ class GridWorld(gym.Env):
 
     def normalize_state(self, s: np.ndarray):
         return s / 1.0
-        # return s / cls.size
+        # return s / self.size
 
     def normalize_reward(self, r: float):
         return r / 10.0
 
-    def display_optimal_policy(self, policy: Optional[np.ndarray] = None):
+    def display(self, policy: Optional[np.ndarray] = None):
         # 设置颜色图
         _map = self.map_reward.copy()
         _map[_map == 0] = 10
@@ -110,7 +118,8 @@ class GridWorld(gym.Env):
         _map[_map == 1] = 30
         colors = ["#b4ff9a", "#ff4500", "#ffd700"]
         my_cmap = ListedColormap(colors, name="my_cmap")
-        plt.imshow(_map, cmap=my_cmap)
+        fig, ax = plt.subplots()
+        ax.imshow(_map, cmap=my_cmap)
         # 绘制策略
         if policy is not None:
             dxdy = [(0, -0.5), (0, 0.5), (-0.5, 0), (0.5, 0)]
@@ -118,13 +127,10 @@ class GridWorld(gym.Env):
                 print()
                 for j in range(self.size):
                     if (a := policy[i][j]) < 4:
-                        plt.arrow(j, i, *dxdy[a], width=0.01, length_includes_head=True, head_width=0.10, color="black")
+                        ax.arrow(j, i, *dxdy[a], width=0.01, length_includes_head=True, head_width=0.10, color="black")
                     else:
-                        plt.scatter(j, i, marker="o", color="black", s=100)
-
-        # plt.xticks(np.arange(self.size) - 0.5)
-        # plt.yticks(np.arange(self.size) - 0.5)
-        plt.grid(color="black", linestyle="-", linewidth=1)
-        plt.xticks([])
-        plt.yticks([])
+                        ax.scatter(j, i, marker="o", color="black", s=100)
+        ax.set_xticks([])
+        ax.set_yticks([])
         plt.show()
+        return ax

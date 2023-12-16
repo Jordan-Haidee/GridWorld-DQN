@@ -1,6 +1,9 @@
+import random
 import subprocess
+import numpy as np
 
 import psutil
+import torch
 
 
 def start_tensorboard(logdir: str, port: int = 6066):
@@ -18,3 +21,10 @@ def start_tensorboard(logdir: str, port: int = 6066):
         with open(".tb_log.txt", "w") as f:
             subprocess.Popen(cmd, stdout=f, stderr=f, shell=False)
         print(f"Tensorboard has started at http://{host}:{port}")
+
+
+def setup_seed(seed: int):
+    """设置随机种子"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)

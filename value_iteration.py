@@ -16,7 +16,7 @@ while True:
     for s in states:
         _s = env.unwrapped.index2coordinate(s)
         q_s = []
-        for a in range(5):
+        for a in range(env.action_space.n):
             _ns = env.unwrapped._next_state(_s, a)
             ns = env.unwrapped.coordinate2index(_ns)
             q_s.append(env.unwrapped._reward(_s, a) + gamma * value_table[ns])
@@ -28,11 +28,11 @@ while True:
         break
 
 # 提取最优策略
-q_table = np.zeros((env.unwrapped.size**2, 5), dtype=float)
+q_table = np.zeros((env.unwrapped.size**2, env.action_space.n), dtype=float)
 for s in states:
     _s = env.unwrapped.index2coordinate(s)
     q_s = []
-    for a in range(5):
+    for a in range(env.action_space.n):
         _ns = env.unwrapped._next_state(_s, a)
         ns = env.unwrapped.coordinate2index(_ns)
         q_s.append(env.unwrapped._reward(_s, a) + gamma * value_table[ns])

@@ -16,4 +16,5 @@ model = DQNAgent(
     optimal_q_table="result/optimal_qv_x10.npy",
 )
 
-model.test("result/DQN-2023-12-16-19-30-20/latest.pt")
+model.test("result/DQN-best_x10/latest.pt")
+

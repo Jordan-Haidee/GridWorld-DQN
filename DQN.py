@@ -30,20 +30,21 @@ class ReplayBuffer:
             self.buffer.popleft()
         self.buffer.append((s, a, r, ns, d))
 
-    def sample(self, N: int, device: str = "cpu"):
+    def sample(self, N: int):
         """采样数据并打包"""
         assert N <= self.size, "batch is too big"
         samples = random.sample(self.buffer, N)
         s, a, r, ns, d = zip(*samples)
         return (
-            torch.from_numpy(np.vstack(s)).float().to(device),
-            torch.from_numpy(np.vstack(a)).type(torch.int64).to(device),
-            torch.from_numpy(np.vstack(r)).float().to(device),
-            torch.from_numpy(np.vstack(ns)).float().to(device),
-            torch.from_numpy(np.vstack(d)).float().to(device),
+            torch.from_numpy(np.vstack(s)).float(),
+            torch.from_numpy(np.vstack(a)).type(torch.int64),
+            torch.from_numpy(np.vstack(r)).float(),
+            torch.from_numpy(np.vstack(ns)).float(),
+            torch.from_numpy(np.vstack(d)).float(),
         )
 
     def count_distribution(self):
+        """统计状态分布"""
         counter = Counter()
         idxs = []
         for trans in self.buffer:
@@ -53,6 +54,8 @@ class ReplayBuffer:
 
 
 class QNet(nn.Module):
+    """Q网络, 用于替代Q表格"""
+
     def __init__(self, state_dim: int, hidden_dim: int, action_dim: int) -> None:
         super().__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
@@ -74,12 +77,13 @@ class DQNAgent:
         self,
         env: str,
         env_size: int = 10,
+        seed: Optional[int] = None,
         hidden_dim: int = 100,
         buffer_capicity: int = 2000,
         buffer_init_ratio: float = 0.30,
         lr: float = 1e-4,
         lr_gamma: float = 0.80,
-        lr_miletones: Sequence[int] = 0.80,
+        lr_miletones: Sequence[int] = None,
         tau: float = 0.005,
         update_interval: int = 10,
         gamma: float = 0.90,
@@ -119,6 +123,7 @@ class DQNAgent:
 
     @torch.no_grad()
     def choose_action(self, s: np.ndarray, epsilon: float = 0.0) -> int:
+        """选择动作"""
         if np.random.uniform() < epsilon:
             a = self.env.action_space.sample()
         else:
@@ -127,6 +132,7 @@ class DQNAgent:
         return a
 
     def collect_exp_before_train(self):
+        """在训练前收集经验"""
         N = self.buffer_init_ratio * self.replay_buffer.capicity
         s, _ = self.env.reset()
         while self.replay_buffer.size < N:
@@ -146,6 +152,7 @@ class DQNAgent:
         self.q_target.load_state_dict(self.q_net.state_dict())
 
     def train_one_batch(self):
+        """训练一个mini-batch"""
         s, a, r, ns, d = self.replay_buffer.sample(self.batch_size)
         with torch.no_grad():
             td_target = r + self.gamma * self.q_target(ns).max(dim=1, keepdim=True)[0]
@@ -158,9 +165,11 @@ class DQNAgent:
 
     @property
     def lr(self):
+        """获得实时学习率"""
         return self.optimizer.param_groups[0]["lr"]
 
     def log_info_per_batch(self, loss):
+        """记录日志"""
         self.logger.add_scalar("Loss/td_loss", loss, self._step)
         self.logger.add_scalar("Buffer/buffer_size", self.replay_buffer.size, self._step)
         self.logger.add_scalar("Epsilon/epsilon", self.epsilon, self._step)
@@ -183,6 +192,7 @@ class DQNAgent:
         return loss.mean(), loss.max()
 
     def save(self):
+        """保存模型"""
         params = {
             "q_net": self.q_net.state_dict(),
             "q_target": self.q_target.state_dict(),
@@ -190,6 +200,7 @@ class DQNAgent:
         torch.save(params, self.save_dir / "latest.pt")
 
     def train(self):
+        """进行训练"""
         self.logger = tb.SummaryWriter(log_dir=self.save_dir / "train_log")
         self.save_dir.mkdir(exist_ok=True)
         self.collect_exp_before_train()
@@ -215,6 +226,7 @@ class DQNAgent:
 
     @torch.no_grad()
     def test(self, checkpoint: Optional[Union[str, Path]] = None):
+        """测试并打印每一个状态的最优动作"""
         if checkpoint is not None:
             params = torch.load(checkpoint)
             self.q_net.load_state_dict(params.get("q_net"))
@@ -229,4 +241,4 @@ class DQNAgent:
                 _s = torch.from_numpy(_s).float()
                 q_table[i][j] = self.q_net(_s).numpy()
                 policy[i][j] = q_table[i][j].argmax()
-        self.env.unwrapped.display_optimal_policy(policy)
+        self.env.unwrapped.display(policy)
